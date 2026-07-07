@@ -77,9 +77,9 @@ def get_contact_keyboard():
 def get_directions_keyboard():
     return types.ReplyKeyboardMarkup(
         keyboard=[
-            [types.KeyboardButton(text="1. Hamshiralik ishi (3 yillik)")],
-            [types.KeyboardButton(text="2. Hamshiralik ishi (2 yillik)")],
-            [types.KeyboardButton(text="3. Farmatsiya ishi"), types.KeyboardButton(text="4. Feldsherlik ishi")]
+            [types.KeyboardButton(text="Hamshiralik ishi (3 yillik)")],
+            [types.KeyboardButton(text="Hamshiralik ishi (2 yillik)")],
+            [types.KeyboardButton(text="Farmatsiya ishi"), types.KeyboardButton(text="Feldsherlik ishi")]
         ],
         resize_keyboard=True,
         one_time_keyboard=True
