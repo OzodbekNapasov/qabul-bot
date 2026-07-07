@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 # FSM holatlari
 class RegistrationStates(StatesGroup):
     FullName = State()       # Ism va Familiya
+    Direction = State()      # Yo'nalish
     SecondPhone = State()    # Qo'shimcha shaxsiy telefon raqami
     PassportPhoto = State()  # Pasport nusxasi (Rasm)
     DiplomaPhoto = State()   # Diplom yoki shahodatnoma nusxasi (Rasm)
@@ -68,6 +69,17 @@ def get_contact_keyboard():
         keyboard=[
             [types.KeyboardButton(text="📞 Telefon raqamini yuborish", request_contact=True)],
             [types.KeyboardButton(text="⬅️ Orqaga")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+def get_directions_keyboard():
+    return types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="1. Hamshiralik ishi (3 yillik)")],
+            [types.KeyboardButton(text="2. Hamshiralik ishi (2 yillik)")],
+            [types.KeyboardButton(text="3. Farmatsiya ishi"), types.KeyboardButton(text="4. Feldsherlik ishi")]
         ],
         resize_keyboard=True,
         one_time_keyboard=True
@@ -153,10 +165,35 @@ async def contact_handler(message: types.Message, state: FSMContext):
 @router.message(RegistrationStates.FullName, F.text)
 async def process_fullname(message: types.Message, state: FSMContext):
     await state.update_data(full_name=message.text)
+    await state.set_state(RegistrationStates.Direction)
+    await message.answer(
+        "📚 Quyidagi yo'nalishlardan birini tanlang:",
+        reply_markup=get_directions_keyboard()
+    )
+
+# 6.5 FSM: Yo'nalish qabul qilish
+@router.message(RegistrationStates.Direction, F.text)
+async def process_direction(message: types.Message, state: FSMContext):
+    direction = message.text
+    valid_directions = [
+        "1. Hamshiralik ishi (3 yillik)",
+        "2. Hamshiralik ishi (2 yillik)",
+        "3. Farmatsiya ishi",
+        "4. Feldsherlik ishi"
+    ]
+    if direction not in valid_directions:
+        await message.answer(
+            "⚠️ Iltimos, quyidagi tugmalardan foydalanib yo'nalishni tanlang:",
+            reply_markup=get_directions_keyboard()
+        )
+        return
+
+    await state.update_data(direction=direction)
     await state.set_state(RegistrationStates.SecondPhone)
     await message.answer(
         "📞 Qo'shimcha shaxsiy telefon raqamingizni kiriting:\n"
-        "(Masalan: +998901234567)"
+        "(Masalan: +998901234567)",
+        reply_markup=types.ReplyKeyboardRemove()
     )
 
 # 7. FSM: Qo'shimcha telefon raqami qabul qilish
@@ -198,6 +235,7 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     username = f"@{message.from_user.username}" if message.from_user.username else "Mavjud emas"
     full_name = user_data.get('full_name', "Noma'lum")
+    direction = user_data.get('direction', "Noma'lum")
     main_phone = user_contacts.get(user_id, "Noma'lum")
     second_phone = user_data.get('second_phone', "Noma'lum")
     passport_photo_file_id = user_data.get('passport_photo')
@@ -222,6 +260,7 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
         f"🆔 <b>Telegram ID:</b> <code>{user_id}</code>\n"
         f"🔗 <b>Username:</b> {username}\n"
         f"👤 <b>F.I.O:</b> {full_name}\n"
+        f"📚 <b>Yo'nalish:</b> {direction}\n"
         f"📞 <b>Asosiy telefon:</b> {main_phone}\n"
         f"📱 <b>Qo'shimcha telefon:</b> {second_phone}"
     )
