@@ -1,7 +1,7 @@
 import os
 import re
 import logging
-import asyncio
+from fastapi import FastAPI, Request, Response, status
 from dotenv import load_dotenv
 
 from aiogram import Bot, Dispatcher, F, Router, types
@@ -37,10 +37,15 @@ class RegistrationStates(StatesGroup):
 
 # Bot va Dispatcher obyektlarini yaratish
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+
+# DIQQAT: Vercel serverless muhitida MemoryStorage server o'chib-yonishi bilan tozalanadi.
+# Ishlab chiqarish (production) uchun RedisStorage yoki tashqi ma'lumotlar bazasi tavsiya etiladi.
 dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 
-# Foydalanuvchi asosiy telefon raqamlarini saqlash uchun vaqtinchalik xotira
+# Foydalanuvchi kontaktlarini saqlash uchun vaqtinchalik xotira
+# DIQQAT: Serverless sharoitida bu ma'lumotlar tez-tez o'chib ketadi.
+# Ishlab chiqarishda ma'lumotlar bazasiga yozish kerak.
 user_contacts = {}
 
 # Keyboardlar
@@ -151,10 +156,10 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
     # Barcha ma'lumotlarni yig'amiz
     user_id = message.from_user.id
     username = f"@{message.from_user.username}" if message.from_user.username else "Mavjud emas"
-    full_name = user_data['full_name']
+    full_name = user_data.get('full_name', "Noma'lum")
     main_phone = user_contacts.get(user_id, "Noma'lum")
-    second_phone = user_data['second_phone']
-    passport_photo_file_id = user_data['passport_photo']
+    second_phone = user_data.get('second_phone', "Noma'lum")
+    passport_photo_file_id = user_data.get('passport_photo')
     
     # FSM ni tozalaymiz
     await state.clear()
@@ -183,12 +188,13 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
         )
         
         # Pasport rasmini guruhga yuboramiz (batafsil ma'lumot matniga reply qilib)
-        await bot.send_photo(
-            chat_id=GROUP_ID,
-            photo=passport_photo_file_id,
-            caption=f"📄 {full_name} - Pasport nusxasi\nTelegram ID: {user_id}",
-            reply_to_message_id=main_msg.message_id
-        )
+        if passport_photo_file_id:
+            await bot.send_photo(
+                chat_id=GROUP_ID,
+                photo=passport_photo_file_id,
+                caption=f"📄 {full_name} - Pasport nusxasi\nTelegram ID: {user_id}",
+                reply_to_message_id=main_msg.message_id
+            )
         
         # Diplom rasmini guruhga yuboramiz
         await bot.send_photo(
@@ -241,14 +247,46 @@ async def handle_admin_reply(message: types.Message):
         logger.error(f"Foydalanuvchiga shartnoma jo'natishda xatolik: {e}")
         await message.reply(f"❌ Shartnomani abituriyentga yuborib bo'lmadi. Xatolik: {e}")
 
-# Asosiy ishga tushirish funksiyasi
-async def main():
-    dp.include_router(router)
-    logger.info("Bot ishga tushmoqda...")
-    await dp.start_polling(bot)
+dp.include_router(router)
 
-if __name__ == "__main__":
+# FastAPI ilovasini yaratamiz
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    return {
+        "status": "active",
+        "description": "FastAPI Webhook for Telegram Qabul Bot"
+    }
+
+@app.post("/webhook")
+async def webhook_handler(request: Request):
     try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot to'xtatildi.")
+        update_data = await request.json()
+        update = types.Update.model_validate(update_data, context={"bot": bot})
+        await dp.feed_update(bot, update)
+        return Response(status_code=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Webhook processing error: {e}")
+        return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# Webhook-ni o'rnatish uchun endpoint (Vercel-ga deploy qilingandan so'ng 1 marta chaqiriladi)
+# Masalan: https://domain-name.vercel.app/setup-webhook
+@app.get("/setup-webhook")
+async def setup_webhook(request: Request):
+    # Vercel domenini avtomatik aniqlash yoki query param orqali olish
+    url = request.query_params.get("url")
+    if not url:
+        # Vercel-da xostni aniqlaymiz
+        host = request.headers.get("host")
+        if host:
+            url = f"https://{host}"
+        else:
+            return {"status": "error", "message": "Domen nomini aniqlab bo'lmadi. 'url' query parametrini bering."}
+
+    webhook_url = f"{url}/webhook"
+    try:
+        await bot.set_webhook(webhook_url)
+        return {"status": "success", "message": f"Webhook muvaffaqiyatli o'rnatildi: {webhook_url}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

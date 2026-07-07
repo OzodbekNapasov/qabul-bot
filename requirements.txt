@@ -1,3 +1,4 @@
 aiogram>=3.0.0
 python-dotenv>=1.0.0
-gradio
+fastapi>=0.100.0
+uvicorn>=0.20.0
