@@ -94,11 +94,12 @@ async def cmd_back(message: types.Message, state: FSMContext):
 @router.message(F.text == "📞 Bog'lanish", F.chat.type == "private")
 async def cmd_contact_info(message: types.Message):
     contact_text = (
-        "📞 <b>Shahrisabz Tibbiyot Texnikumi bilan bog'lanish:</b>\n\n"
-        "📍 <b>Manzil:</b> Shahrisabz shahri, Ipak yo'li ko'chasi\n"
-        "☎️ <b>Telefon:</b> +998 75 522 00 00\n"
-        "💬 <b>Telegram admin:</b> @shahrisabz_med_admin\n\n"
-        "Boshqa savollaringiz bo'lsa, telefon orqali murojaat qilishingiz mumkin."
+        "🏥 <b>Shahrisabz Tibbiyot Texnikumi bilan bog'lanish:</b>\n\n"
+        "📞 <b>Telefon:</b> +998 97 587 46 57\n"
+        "✈️ <b>Telegram:</b> @shahrisabz_t_t_uz\n"
+        "📸 <b>Instagram:</b> @shahrisabz_t_t_uz\n"
+        "📍 <b>Manzil:</b> Shahrisabz shahri, Ipak Yuli ko'chasi, 36A-uy\n"
+        "⏰ <b>Ish vaqti:</b> Dushanba-Juma 09:00-17:00"
     )
     await message.answer(contact_text, reply_markup=get_main_keyboard())
 
