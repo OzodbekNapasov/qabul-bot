@@ -176,10 +176,10 @@ async def process_fullname(message: types.Message, state: FSMContext):
 async def process_direction(message: types.Message, state: FSMContext):
     direction = message.text
     valid_directions = [
-        "1. Hamshiralik ishi (3 yillik)",
-        "2. Hamshiralik ishi (2 yillik)",
-        "3. Farmatsiya ishi",
-        "4. Feldsherlik ishi"
+        "Hamshiralik ishi (3 yillik)",
+        "Hamshiralik ishi (2 yillik)",
+        "Farmatsiya ishi",
+        "Feldsherlik ishi"
     ]
     if direction not in valid_directions:
         await message.answer(
