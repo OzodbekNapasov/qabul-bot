@@ -97,7 +97,7 @@ async def cmd_contact_info(message: types.Message):
         "🏥 <b>Shahrisabz Tibbiyot Texnikumi bilan bog'lanish:</b>\n\n"
         "📞 <b>Telefon:</b> +998 97 587 46 57\n"
         "✈️ <b>Telegram:</b> @shahrisabz_t_t_uz\n"
-        "📸 <b>Instagram:</b> @shahrisabz_t_t_uz\n"
+        "📸 <b>Instagram:</b> <a href=\"https://www.instagram.com/shahrisabz_t_t_uz/\">@shahrisabz_t_t_uz</a>\n"
         "📍 <b>Manzil:</b> Shahrisabz shahri, Ipak Yuli ko'chasi, 36A-uy\n"
         "⏰ <b>Ish vaqti:</b> Dushanba-Juma 09:00-17:00"
     )
