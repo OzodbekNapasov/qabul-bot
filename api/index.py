@@ -4,13 +4,17 @@ import logging
 from fastapi import FastAPI, Request, Response, status
 from dotenv import load_dotenv
 
-from aiogram import Bot, Dispatcher, F, Router, types
+from aiogram import Bot, Dispatcher, F, Router, types, BaseMiddleware
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramAPIError
+from typing import Callable, Dict, Any, Awaitable
+
+REQUIRED_CHANNEL = "@shahrisabz_t_t_uz"
+CHANNEL_URL = "https://t.me/shahrisabz_t_t_uz"
 
 # .env faylini yuklaymiz (mavjud bo'lsa)
 load_dotenv()
@@ -287,6 +291,84 @@ async def handle_admin_reply(message: types.Message):
     except TelegramAPIError as e:
         logger.error(f"Foydalanuvchiga shartnoma jo'natishda xatolik: {e}")
         await message.reply(f"❌ Shartnomani abituriyentga yuborib bo'lmadi. Xatolik: {e}")
+
+# A'zolikni tekshirish helper funksiyasi
+async def check_subscription(user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=REQUIRED_CHANNEL, user_id=user_id)
+        if member.status in ["member", "creator", "administrator"]:
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Subscription check error for user {user_id}: {e}")
+        # API xatolik yuz bersa foydalanuvchini bloklamaslik uchun True qaytaramiz
+        return True
+
+# A'zolikni tekshirish uchun Middleware
+class SubscriptionMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any]
+    ) -> Any:
+        user = data.get("event_from_user")
+        chat = data.get("event_chat")
+        
+        # Agar a'zolikni tekshirish callback so'rovi bo'lsa, o'tkazib yuboramiz
+        if isinstance(event, types.CallbackQuery) and event.data == "check_sub":
+            return await handler(event, data)
+            
+        if user and chat and chat.type == "private":
+            is_subscribed = await check_subscription(user.id)
+            if not is_subscribed:
+                keyboard = types.InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [types.InlineKeyboardButton(text="👥 Guruhga a'zo bo'lish", url=CHANNEL_URL)],
+                        [types.InlineKeyboardButton(text="✅ A'zolikni tekshirish", callback_data="check_sub")]
+                    ]
+                )
+                warning_text = (
+                    "⚠️ <b>Botdan foydalanish uchun avval rasmiy guruhimizga a'zo bo'ling!</b>\n\n"
+                    "A'zo bo'lgach, \"A'zolikni tekshirish\" tugmasini bosing."
+                )
+                if isinstance(event, types.Message):
+                    await event.answer(warning_text, reply_markup=keyboard)
+                elif isinstance(event, types.CallbackQuery):
+                    await event.message.answer(warning_text, reply_markup=keyboard)
+                    await event.answer()
+                return
+                
+        return await handler(event, data)
+
+# A'zolikni tekshirish callback handlingi
+@router.callback_query(F.data == "check_sub")
+async def callback_check_sub(callback: types.CallbackQuery, state: FSMContext):
+    user_id = callback.from_user.id
+    is_subscribed = await check_subscription(user_id)
+    if is_subscribed:
+        try:
+            await callback.message.delete()
+        except Exception:
+            pass
+        await callback.answer("✅ Rahmat! A'zolik tasdiqlandi.", show_alert=True)
+        welcome_text = (
+            "👋 Assalomu alaykum!\n\n"
+            "🏥 \"Shahrisabz Tibbiyot Texnikumi\"ning\n"
+            "rasmiy qabul botiga xush kelibsiz.\n\n"
+            "📋 Ushbu bot orqali siz:\n\n"
+            "✅ Onlayn shartnoma rasmiylashtirishingiz\n"
+            "✅ Kerakli hujjatlarni yuborishingiz\n"
+            "✅ Arizangiz holatini kuzatishingiz mumkin.\n\n"
+            "Boshlash uchun quyidagi tugmani bosing."
+        )
+        await callback.message.answer(welcome_text, reply_markup=get_main_keyboard())
+    else:
+        await callback.answer("❌ Siz hali guruhga a'zo bo'lmagansiz!", show_alert=True)
+
+# Middleware-larni ro'yxatdan o'tkazamiz
+router.message.outer_middleware(SubscriptionMiddleware())
+router.callback_query.outer_middleware(SubscriptionMiddleware())
 
 dp.include_router(router)
 
