@@ -49,20 +49,23 @@ router = Router()
 user_contacts = {}
 
 # Keyboardlar
+def get_main_keyboard():
+    return types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="📤 Hujjat topshirish")],
+            [types.KeyboardButton(text="📞 Bog'lanish")]
+        ],
+        resize_keyboard=True
+    )
+
 def get_contact_keyboard():
     return types.ReplyKeyboardMarkup(
         keyboard=[
-            [types.KeyboardButton(text="📞 Telefon raqamini yuborish", request_contact=True)]
+            [types.KeyboardButton(text="📞 Telefon raqamini yuborish", request_contact=True)],
+            [types.KeyboardButton(text="⬅️ Orqaga")]
         ],
         resize_keyboard=True,
         one_time_keyboard=True
-    )
-
-def get_apply_inline_keyboard():
-    return types.InlineKeyboardMarkup(
-        inline_keyboard=[
-            [types.InlineKeyboardButton(text="📝 Hujjat topshirish", callback_data="start_apply")]
-        ]
     )
 
 # 1. /start buyrug'i (Faqat shaxsiy chatlarda)
@@ -70,45 +73,77 @@ def get_apply_inline_keyboard():
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     welcome_text = (
-        "👋 Assalomu alaykum! Xususiy tibbiyot texnikumi qabul botiga xush kelibsiz.\n\n"
-        "Ro'yxatdan o'tishni boshlash uchun pastdagi tugma orqali telefon raqamingizni yuboring."
+        "👋 Assalomu alaykum!\n\n"
+        "🏥 \"Shahrisabz Tibbiyot Texnikumi\"ning\n"
+        "rasmiy qabul botiga xush kelibsiz.\n\n"
+        "📋 Ushbu bot orqali siz:\n\n"
+        "✅ Onlayn shartnoma rasmiylashtirishingiz\n"
+        "✅ Kerakli hujjatlarni yuborishingiz\n"
+        "✅ Arizangiz holatini kuzatishingiz mumkin.\n\n"
+        "Boshlash uchun quyidagi tugmani bosing."
     )
-    await message.answer(welcome_text, reply_markup=get_contact_keyboard())
+    await message.answer(welcome_text, reply_markup=get_main_keyboard())
 
-# 2. Kontakt qabul qilish (Faqat shaxsiy chatlarda)
+# 2. Orqaga qaytish handlingi
+@router.message(F.text == "⬅️ Orqaga", F.chat.type == "private")
+async def cmd_back(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Bosh menyu:", reply_markup=get_main_keyboard())
+
+# 3. Bog'lanish tugmasi
+@router.message(F.text == "📞 Bog'lanish", F.chat.type == "private")
+async def cmd_contact_info(message: types.Message):
+    contact_text = (
+        "📞 <b>Shahrisabz Tibbiyot Texnikumi bilan bog'lanish:</b>\n\n"
+        "📍 <b>Manzil:</b> Shahrisabz shahri, Ipak yo'li ko'chasi\n"
+        "☎️ <b>Telefon:</b> +998 75 522 00 00\n"
+        "💬 <b>Telegram admin:</b> @shahrisabz_med_admin\n\n"
+        "Boshqa savollaringiz bo'lsa, telefon orqali murojaat qilishingiz mumkin."
+    )
+    await message.answer(contact_text, reply_markup=get_main_keyboard())
+
+# 4. Hujjat topshirish bosqichini boshlash
+@router.message(F.text == "📤 Hujjat topshirish", F.chat.type == "private")
+async def start_apply(message: types.Message, state: FSMContext):
+    await state.clear()
+    user_id = message.from_user.id
+    # Agar telefon raqami allaqachon olingan bo'lsa
+    if user_id in user_contacts:
+        await state.set_state(RegistrationStates.FullName)
+        step_text = (
+            "📄 Ma'lumotlarni ketma-ket kiriting.\n\n"
+            "❗ Pasport ma'lumotlari va telefon raqamingizni\n"
+            "xatosiz kiriting.\n\n"
+            "Barcha ma'lumotlar tekshirilgandan so'ng\n"
+            "administrator tomonidan ko'rib chiqiladi.\n\n"
+            "✍️ Ism va Familiyangizni kiriting:"
+        )
+        await message.answer(step_text, reply_markup=types.ReplyKeyboardRemove())
+    else:
+        # Avval kontakt so'raymiz
+        ask_contact_text = (
+            "Ro'yxatdan o'tishni boshlash uchun pastdagi tugma orqali telefon raqamingizni yuboring."
+        )
+        await message.answer(ask_contact_text, reply_markup=get_contact_keyboard())
+
+# 5. Kontakt qabul qilish (Faqat shaxsiy chatlarda)
 @router.message(F.contact, F.chat.type == "private")
-async def contact_handler(message: types.Message):
+async def contact_handler(message: types.Message, state: FSMContext):
     phone_number = message.contact.phone_number
     user_contacts[message.from_user.id] = phone_number
     
-    await message.answer(
-        f"✅ Telefon raqamingiz qabul qilindi: {phone_number}",
-        reply_markup=types.ReplyKeyboardRemove()
-    )
-    await message.answer(
-        "Hujjat topshirishni boshlash uchun pastdagi 'Hujjat topshirish' tugmasini bosing.",
-        reply_markup=get_apply_inline_keyboard()
-    )
-
-# 3. "Hujjat topshirish" tugmasi bosilganda (Inline Button Callback)
-@router.callback_query(F.data == "start_apply")
-async def start_registration_callback(callback: types.CallbackQuery, state: FSMContext):
-    # Foydalanuvchi kontakt yuborganini tekshirish
-    if callback.from_user.id not in user_contacts:
-        await callback.answer(
-            "⚠️ Iltimos, avval telefon raqamingizni yuboring!",
-            show_alert=True
-        )
-        return
-        
     await state.set_state(RegistrationStates.FullName)
-    await callback.message.edit_reply_markup(reply_markup=None) # Bosilgan tugmani olib tashlaymiz
-    await callback.message.answer(
+    step_text = (
+        "📄 Ma'lumotlarni ketma-ket kiriting.\n\n"
+        "❗ Pasport ma'lumotlari va telefon raqamingizni\n"
+        "xatosiz kiriting.\n\n"
+        "Barcha ma'lumotlar tekshirilgandan so'ng\n"
+        "administrator tomonidan ko'rib chiqiladi.\n\n"
         "✍️ Ism va Familiyangizni kiriting:"
     )
-    await callback.answer()
+    await message.answer(step_text, reply_markup=types.ReplyKeyboardRemove())
 
-# 4. FSM: Ism va Familiya qabul qilish
+# 6. FSM: Ism va Familiya qabul qilish
 @router.message(RegistrationStates.FullName, F.text)
 async def process_fullname(message: types.Message, state: FSMContext):
     await state.update_data(full_name=message.text)
@@ -118,7 +153,7 @@ async def process_fullname(message: types.Message, state: FSMContext):
         "(Masalan: +998901234567)"
     )
 
-# 5. FSM: Qo'shimcha telefon raqami qabul qilish
+# 7. FSM: Qo'shimcha telefon raqami qabul qilish
 @router.message(RegistrationStates.SecondPhone, F.text)
 async def process_second_phone(message: types.Message, state: FSMContext):
     await state.update_data(second_phone=message.text)
@@ -132,7 +167,7 @@ async def process_second_phone(message: types.Message, state: FSMContext):
 async def process_passport_photo_invalid(message: types.Message):
     await message.answer("⚠️ Iltimos, pasport nusxasini faqat rasm (photo) ko'rinishida yuboring!")
 
-# 6. FSM: Pasport nusxasi qabul qilish
+# 8. FSM: Pasport nusxasi qabul qilish
 @router.message(RegistrationStates.PassportPhoto, F.photo)
 async def process_passport_photo(message: types.Message, state: FSMContext):
     photo_file_id = message.photo[-1].file_id
@@ -147,7 +182,7 @@ async def process_passport_photo(message: types.Message, state: FSMContext):
 async def process_diploma_photo_invalid(message: types.Message):
     await message.answer("⚠️ Iltimos, diplom/shahodatnoma nusxasini faqat rasm (photo) ko'rinishida yuboring!")
 
-# 7. FSM: Diplom nusxasi qabul qilish va guruhga yuborish
+# 9. FSM: Diplom nusxasi qabul qilish va guruhga yuborish
 @router.message(RegistrationStates.DiplomaPhoto, F.photo)
 async def process_diploma_photo(message: types.Message, state: FSMContext):
     diploma_photo_file_id = message.photo[-1].file_id
@@ -165,9 +200,14 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
     await state.clear()
     
     # Foydalanuvchiga muvaffaqiyatli yakunlangani haqida xabar beramiz
+    success_text = (
+        "✅ Ma'lumotlaringiz muvaffaqiyatli qabul qilindi!\n\n"
+        "📌 Tez orada administrator siz bilan bog'lanadi.\n\n"
+        "Shahrisabz Tibbiyot Texnikumini tanlaganingiz uchun rahmat!"
+    )
     await message.answer(
-        "🎉 Arizangiz qabul qilindi, tez orada shartnoma tayyorlanadi.",
-        reply_markup=get_apply_inline_keyboard()
+        success_text,
+        reply_markup=get_main_keyboard()
     )
 
     # Guruhga yuborish uchun chiroyli matn formati
