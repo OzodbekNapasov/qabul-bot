@@ -11,6 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramAPIError
+from aiogram.types import TelegramObject
 from typing import Callable, Dict, Any, Awaitable
 
 REQUIRED_CHANNEL = "@shahrisabz_t_t_uz"
