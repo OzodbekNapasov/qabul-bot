@@ -171,7 +171,7 @@ async def process_fullname(message: types.Message, state: FSMContext):
     await state.update_data(full_name=message.text)
     await state.set_state(RegistrationStates.DocumentType)
     await message.answer(
-        "Ro'yxatdan o'tish turi:",
+        "📄 Hujjat turini tanlang:",
         reply_markup=get_document_type_keyboard()
     )
 
@@ -192,7 +192,7 @@ async def process_document_type(message: types.Message, state: FSMContext):
 
     await state.set_state(RegistrationStates.Direction)
     await message.answer(
-        "📚 Quyidagi yo'nalishlardan birini tanlang:",
+        "🎓 Ta'lim yo'nalishini tanlang:",
         reply_markup=get_directions_keyboard()
     )
 
@@ -309,7 +309,8 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
     # Foydalanuvchiga muvaffaqiyatli yakunlangani haqida xabar beramiz
     success_text = (
         "✅ Ma'lumotlaringiz muvaffaqiyatli qabul qilindi!\n\n"
-        "📌 Tez orada administrator siz bilan bog'lanadi.\n\n"
+        "📌 Arizangiz 24 soat ichida (ish kunlarida) ko'rib chiqiladi.\n\n"
+        "📄 Tekshiruv yakunlangach, shartnomangiz Telegram orqali yuboriladi.\n\n"
         "Shahrisabz Tibbiyot Texnikumini tanlaganingiz uchun rahmat!"
     )
     await message.answer(
