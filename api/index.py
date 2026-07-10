@@ -36,9 +36,12 @@ logger = logging.getLogger(__name__)
 # FSM holatlari
 class RegistrationStates(StatesGroup):
     FullName = State()       # Ism va Familiya
+    DocumentType = State()   # Hujjat turi (Pasport / ID-karta)
     Direction = State()      # Yo'nalish
     SecondPhone = State()    # Qo'shimcha shaxsiy telefon raqami
     PassportPhoto = State()  # Pasport nusxasi (Rasm)
+    IdCardFront = State()    # ID-karta old tomoni (Rasm)
+    IdCardBack = State()     # ID-karta orqa tomoni (Rasm)
     DiplomaPhoto = State()   # Diplom yoki shahodatnoma nusxasi (Rasm)
 
 # Bot va Dispatcher obyektlarini yaratish
@@ -69,6 +72,15 @@ def get_contact_keyboard():
         keyboard=[
             [types.KeyboardButton(text="📞 Telefon raqamini yuborish", request_contact=True)],
             [types.KeyboardButton(text="⬅️ Orqaga")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+def get_document_type_keyboard():
+    return types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="🪪 ID-karta"), types.KeyboardButton(text="📘 Pasport")]
         ],
         resize_keyboard=True,
         one_time_keyboard=True
@@ -129,12 +141,8 @@ async def start_apply(message: types.Message, state: FSMContext):
     if user_id in user_contacts:
         await state.set_state(RegistrationStates.FullName)
         step_text = (
-            "📄 Ma'lumotlarni ketma-ket kiriting.\n\n"
-            "❗ Pasport ma'lumotlari va telefon raqamingizni\n"
-            "xatosiz kiriting.\n\n"
-            "Barcha ma'lumotlar tekshirilgandan so'ng\n"
-            "administrator tomonidan ko'rib chiqiladi.\n\n"
-            "✍️ Ism va Familiyangizni kiriting:"
+            "📄 Online ro'yxatdan o'tishni boshlaymiz.\n"
+            "✍️ Ismingiz va Familiyangizni kiriting."
         )
         await message.answer(step_text, reply_markup=types.ReplyKeyboardRemove())
     else:
@@ -152,12 +160,8 @@ async def contact_handler(message: types.Message, state: FSMContext):
     
     await state.set_state(RegistrationStates.FullName)
     step_text = (
-        "📄 Ma'lumotlarni ketma-ket kiriting.\n\n"
-        "❗ Pasport ma'lumotlari va telefon raqamingizni\n"
-        "xatosiz kiriting.\n\n"
-        "Barcha ma'lumotlar tekshirilgandan so'ng\n"
-        "administrator tomonidan ko'rib chiqiladi.\n\n"
-        "✍️ Ism va Familiyangizni kiriting:"
+        "📄 Online ro'yxatdan o'tishni boshlaymiz.\n"
+        "✍️ Ismingiz va Familiyangizni kiriting."
     )
     await message.answer(step_text, reply_markup=types.ReplyKeyboardRemove())
 
@@ -165,6 +169,27 @@ async def contact_handler(message: types.Message, state: FSMContext):
 @router.message(RegistrationStates.FullName, F.text)
 async def process_fullname(message: types.Message, state: FSMContext):
     await state.update_data(full_name=message.text)
+    await state.set_state(RegistrationStates.DocumentType)
+    await message.answer(
+        "Ro'yxatdan o'tish turi:",
+        reply_markup=get_document_type_keyboard()
+    )
+
+# 6.2 FSM: Hujjat turi qabul qilish
+@router.message(RegistrationStates.DocumentType, F.text)
+async def process_document_type(message: types.Message, state: FSMContext):
+    doc_type = message.text
+    if doc_type == "📘 Pasport":
+        await state.update_data(document_type="passport")
+    elif doc_type == "🪪 ID-karta":
+        await state.update_data(document_type="id_card")
+    else:
+        await message.answer(
+            "⚠️ Iltimos, quyidagi tugmalardan foydalanib ro'yxatdan o'tish turini tanlang:",
+            reply_markup=get_document_type_keyboard()
+        )
+        return
+
     await state.set_state(RegistrationStates.Direction)
     await message.answer(
         "📚 Quyidagi yo'nalishlardan birini tanlang:",
@@ -200,12 +225,21 @@ async def process_direction(message: types.Message, state: FSMContext):
 @router.message(RegistrationStates.SecondPhone, F.text)
 async def process_second_phone(message: types.Message, state: FSMContext):
     await state.update_data(second_phone=message.text)
-    await state.set_state(RegistrationStates.PassportPhoto)
-    await message.answer(
-        "📸 Pasportingiz nusxasini rasm holatida yuboring (Photo):"
-    )
+    user_data = await state.get_data()
+    doc_type = user_data.get("document_type")
+    
+    if doc_type == "passport":
+        await state.set_state(RegistrationStates.PassportPhoto)
+        await message.answer(
+            "📸 Pasportingizning <b>asosiy (old) sahifasi</b> rasmini yuboring."
+        )
+    else:
+        await state.set_state(RegistrationStates.IdCardFront)
+        await message.answer(
+            "📸 ID-kartangizning <b>old tomoni</b> rasmini yuboring."
+        )
 
-# Agar foydalanuvchi rasm o'rniga boshqa narsa yuborsa
+# Agar pasport nusxasi o'rniga boshqa narsa yuborilsa
 @router.message(RegistrationStates.PassportPhoto, ~F.photo)
 async def process_passport_photo_invalid(message: types.Message):
     await message.answer("⚠️ Iltimos, pasport nusxasini faqat rasm (photo) ko'rinishida yuboring!")
@@ -214,16 +248,41 @@ async def process_passport_photo_invalid(message: types.Message):
 @router.message(RegistrationStates.PassportPhoto, F.photo)
 async def process_passport_photo(message: types.Message, state: FSMContext):
     photo_file_id = message.photo[-1].file_id
-    await state.update_data(passport_photo=photo_file_id)
+    await state.update_data(passport_front=photo_file_id)
     await state.set_state(RegistrationStates.DiplomaPhoto)
     await message.answer(
         "📸 Shahodatnoma yoki diplom nusxasini rasm holatida yuboring (Photo):"
     )
 
-# Agar diplom o'rniga boshqa narsa yuborsa
-@router.message(RegistrationStates.DiplomaPhoto, ~F.photo)
-async def process_diploma_photo_invalid(message: types.Message):
-    await message.answer("⚠️ Iltimos, diplom/shahodatnoma nusxasini faqat rasm (photo) ko'rinishida yuboring!")
+# Agar ID-karta old tomoni o'rniga boshqa narsa yuborilsa
+@router.message(RegistrationStates.IdCardFront, ~F.photo)
+async def process_id_card_front_invalid(message: types.Message):
+    await message.answer("⚠️ Iltimos, ID-kartaning old tomoni nusxasini faqat rasm (photo) ko'rinishida yuboring!")
+
+# 8.1 FSM: ID-karta old tomoni qabul qilish
+@router.message(RegistrationStates.IdCardFront, F.photo)
+async def process_id_card_front(message: types.Message, state: FSMContext):
+    photo_file_id = message.photo[-1].file_id
+    await state.update_data(id_front=photo_file_id)
+    await state.set_state(RegistrationStates.IdCardBack)
+    await message.answer(
+        "📸 Endi ID-kartangizning <b>orqa tomoni</b> rasmini yuboring."
+    )
+
+# Agar ID-karta orqa tomoni o'rniga boshqa narsa yuborilsa
+@router.message(RegistrationStates.IdCardBack, ~F.photo)
+async def process_id_card_back_invalid(message: types.Message):
+    await message.answer("⚠️ Iltimos, ID-kartaning orqa tomoni nusxasini faqat rasm (photo) ko'rinishida yuboring!")
+
+# 8.2 FSM: ID-karta orqa tomoni qabul qilish
+@router.message(RegistrationStates.IdCardBack, F.photo)
+async def process_id_card_back(message: types.Message, state: FSMContext):
+    photo_file_id = message.photo[-1].file_id
+    await state.update_data(id_back=photo_file_id)
+    await state.set_state(RegistrationStates.DiplomaPhoto)
+    await message.answer(
+        "📸 Shahodatnoma yoki diplom nusxasini rasm holatida yuboring (Photo):"
+    )
 
 # 9. FSM: Diplom nusxasi qabul qilish va guruhga yuborish
 @router.message(RegistrationStates.DiplomaPhoto, F.photo)
@@ -235,10 +294,14 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     username = f"@{message.from_user.username}" if message.from_user.username else "Mavjud emas"
     full_name = user_data.get('full_name', "Noma'lum")
+    document_type = user_data.get('document_type', "passport")
     direction = user_data.get('direction', "Noma'lum")
     main_phone = user_contacts.get(user_id, "Noma'lum")
     second_phone = user_data.get('second_phone', "Noma'lum")
-    passport_photo_file_id = user_data.get('passport_photo')
+    
+    passport_front = user_data.get('passport_front')
+    id_front = user_data.get('id_front')
+    id_back = user_data.get('id_back')
     
     # FSM ni tozalaymiz
     await state.clear()
@@ -254,12 +317,15 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
         reply_markup=get_main_keyboard()
     )
 
+    doc_type_text = "📘 Pasport" if document_type == "passport" else "🪪 ID-karta"
+
     # Guruhga yuborish uchun chiroyli matn formati
     group_text = (
         "🔔 <b>Yangi ariza kelib tushdi!</b>\n\n"
         f"🆔 <b>Telegram ID:</b> <code>{user_id}</code>\n"
         f"🔗 <b>Username:</b> {username}\n"
         f"👤 <b>F.I.O:</b> {full_name}\n"
+        f"💳 <b>Hujjat turi:</b> {doc_type_text}\n"
         f"📚 <b>Yo'nalish:</b> {direction}\n"
         f"📞 <b>Asosiy telefon:</b> {main_phone}\n"
         f"📱 <b>Qo'shimcha telefon:</b> {second_phone}"
@@ -272,14 +338,30 @@ async def process_diploma_photo(message: types.Message, state: FSMContext):
             text=group_text
         )
         
-        # Pasport rasmini guruhga yuboramiz (batafsil ma'lumot matniga reply qilib)
-        if passport_photo_file_id:
-            await bot.send_photo(
-                chat_id=GROUP_ID,
-                photo=passport_photo_file_id,
-                caption=f"📄 {full_name} - Pasport nusxasi\nTelegram ID: {user_id}",
-                reply_to_message_id=main_msg.message_id
-            )
+        # Hujjat rasmlarini yuboramiz
+        if document_type == "passport":
+            if passport_front:
+                await bot.send_photo(
+                    chat_id=GROUP_ID,
+                    photo=passport_front,
+                    caption=f"📄 {full_name} - Pasport nusxasi\nTelegram ID: {user_id}",
+                    reply_to_message_id=main_msg.message_id
+                )
+        else:
+            if id_front:
+                await bot.send_photo(
+                    chat_id=GROUP_ID,
+                    photo=id_front,
+                    caption=f"📄 {full_name} - ID-karta old tomoni\nTelegram ID: {user_id}",
+                    reply_to_message_id=main_msg.message_id
+                )
+            if id_back:
+                await bot.send_photo(
+                    chat_id=GROUP_ID,
+                    photo=id_back,
+                    caption=f"📄 {full_name} - ID-karta orqa tomoni\nTelegram ID: {user_id}",
+                    reply_to_message_id=main_msg.message_id
+                )
         
         # Diplom rasmini guruhga yuboramiz
         await bot.send_photo(
